@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
-import { db } from '../../lib/firebase'
+import { useState, useEffect, useRef } from 'react'
+import { db, storage } from '../../lib/firebase'
 import {
   doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp
 } from 'firebase/firestore'
-import { CheckCircle, Users } from 'lucide-react'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { CheckCircle, Users, Camera } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -166,7 +167,7 @@ function Toast({ message, onDone }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Profile() {
-  const { user } = useAuthStore()
+  const { user, profile: storeProfile, setProfile } = useAuthStore()
   const [activeTab, setActiveTab]   = useState(0)
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
@@ -213,6 +214,11 @@ export default function Profile() {
   const [tpDexamethasone, setTpDexamethasone]         = useState('2ml')
   const [tpBupivacaine, setTpBupivacaine]             = useState('3ml')
 
+  // Photo
+  const [photoURL, setPhotoURL]         = useState('')
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const fileInputRef                    = useRef(null)
+
   // Follower / Following counts
   const [followerCount, setFollowerCount]   = useState(0)
   const [followingCount, setFollowingCount] = useState(0)
@@ -236,6 +242,7 @@ export default function Profile() {
 
         if (profSnap.exists()) {
           const d = profSnap.data()
+          if (d.photo_url) setPhotoURL(d.photo_url)
           if (d.preferred_title) setPreferredTitle(d.preferred_title)
           if (d.pronouns) {
             const knownPronoun = PRONOUN_OPTIONS.find((p) => p !== 'Other' && p === d.pronouns)
@@ -300,6 +307,27 @@ export default function Profile() {
     }
     load()
   }, [user?.uid])
+
+  // ── Photo upload ───────────────────────────────────────────────────────────
+  async function handlePhotoChange(e) {
+    const file = e.target.files?.[0]
+    if (!file || !user?.uid) return
+    setPhotoUploading(true)
+    try {
+      const storageRef = ref(storage, `profile_pictures/${user.uid}`)
+      await uploadBytes(storageRef, file)
+      const url = await getDownloadURL(storageRef)
+      setPhotoURL(url)
+      await setDoc(doc(db, 'profiles', user.uid), { photo_url: url }, { merge: true })
+      setProfile({ ...storeProfile, photo_url: url })
+      setToast('Profile photo updated')
+    } catch (err) {
+      console.error(err)
+      setToast('Failed to upload photo')
+    } finally {
+      setPhotoUploading(false)
+    }
+  }
 
   // ── Save handlers ──────────────────────────────────────────────────────────
   async function saveIdentity() {
@@ -467,6 +495,42 @@ export default function Profile() {
         {/* ── Tab 0: Identity ─────────────────────────────────────────────── */}
         {activeTab === 0 && (
           <div className="space-y-8">
+
+            {/* Profile photo */}
+            <section className="flex flex-col items-center gap-3 pb-2">
+              <div className="relative">
+                {photoURL ? (
+                  <img
+                    src={photoURL}
+                    alt="Profile"
+                    className="w-24 h-24 rounded-full object-cover border-2 border-slate-200 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-2xl font-bold text-white border-2 border-slate-200 shadow-sm">
+                    {(storeProfile?.preferred_name ?? user?.email ?? '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={photoUploading}
+                  className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded-full flex items-center justify-center shadow-md transition-colors disabled:opacity-60"
+                >
+                  {photoUploading
+                    ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : <Camera size={14} className="text-white" />
+                  }
+                </button>
+              </div>
+              <p className="text-xs text-slate-400">Tap the camera to update your photo</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoChange}
+              />
+            </section>
+
             <section>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">
                 Preferred Title

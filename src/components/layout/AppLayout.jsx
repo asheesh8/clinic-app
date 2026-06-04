@@ -76,8 +76,11 @@ export default function AppLayout({ children }) {
       {/* User */}
       <div className="px-3 py-4 border-t border-slate-100">
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 mb-2">
-          <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
-            {initials}
+          <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0 overflow-hidden">
+            {profile?.photo_url
+              ? <img src={profile.photo_url} alt="avatar" className="w-full h-full object-cover" />
+              : initials
+            }
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-slate-900 truncate">
