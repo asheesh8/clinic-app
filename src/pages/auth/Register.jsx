@@ -173,6 +173,7 @@ export default function Register() {
         preferred_name:  form.preferred_name,
         role:            form.role,
         organization:    form.organization,
+        org_key:         form.organization.trim().toLowerCase(),
         pronouns:        '',
         preferred_title: '',
         visibility:      'org',

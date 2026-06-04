@@ -92,7 +92,8 @@ export default function Network() {
 
       // Org members (excluding self and already-followed or pending)
       if (org) {
-        const orgQ = query(collection(db, 'profiles'), where('organization', '==', org))
+        const orgKey = org.trim().toLowerCase()
+        const orgQ = query(collection(db, 'profiles'), where('org_key', '==', orgKey))
         const orgSnap = await getDocs(orgQ)
         const members = orgSnap.docs
           .filter((d) => d.id !== uid)

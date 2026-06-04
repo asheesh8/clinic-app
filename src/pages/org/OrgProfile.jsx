@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { auth, db } from '../../lib/firebase'
+import { db } from '../../lib/firebase'
 import {
   collection, query, where, getDocs, doc, getDoc
 } from 'firebase/firestore'
@@ -27,8 +27,8 @@ function initials(name) {
 }
 
 export default function OrgProfile() {
-  const { profile } = useAuthStore()
-  const uid = auth.currentUser?.uid
+  const { profile, user } = useAuthStore()
+  const uid = user?.uid
 
   const [members, setMembers]               = useState([])
   const [workflowCounts, setWorkflowCounts] = useState({}) // uid → count
@@ -41,7 +41,8 @@ export default function OrgProfile() {
       if (!uid || !myOrg) { setLoading(false); return }
       try {
         // Load all org members
-        const orgQ    = query(collection(db, 'profiles'), where('organization', '==', myOrg))
+        const orgKey  = myOrg.trim().toLowerCase()
+        const orgQ    = query(collection(db, 'profiles'), where('org_key', '==', orgKey))
         const orgSnap = await getDocs(orgQ)
         const memberList = orgSnap.docs.map((d) => ({ uid: d.id, ...d.data() }))
         setMembers(memberList)
