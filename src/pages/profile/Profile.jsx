@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { db, storage } from '../../lib/firebase'
+import { db } from '../../lib/firebase'
 import {
   doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp
 } from 'firebase/firestore'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { CheckCircle, Users, Camera } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
+
+const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`
+const UPLOAD_PRESET  = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -314,9 +316,17 @@ export default function Profile() {
     if (!file || !user?.uid) return
     setPhotoUploading(true)
     try {
-      const storageRef = ref(storage, `profile_pictures/${user.uid}`)
-      await uploadBytes(storageRef, file)
-      const url = await getDownloadURL(storageRef)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('upload_preset', UPLOAD_PRESET)
+      formData.append('public_id', `profile_${user.uid}`)
+      formData.append('overwrite', 'true')
+
+      const res = await fetch(CLOUDINARY_URL, { method: 'POST', body: formData })
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json()
+      const url = data.secure_url
+
       setPhotoURL(url)
       await setDoc(doc(db, 'profiles', user.uid), { photo_url: url }, { merge: true })
       setProfile({ ...storeProfile, photo_url: url })
