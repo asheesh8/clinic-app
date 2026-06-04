@@ -6,6 +6,7 @@ import {
   doc, getDoc, setDoc, deleteDoc, updateDoc, serverTimestamp
 } from 'firebase/firestore'
 import { Users, UserPlus, UserCheck, UserX, Search, MessageSquare } from 'lucide-react'
+import { useAuthStore } from '../../stores/authStore'
 
 function avatarBg(role) {
   if (!role) return 'bg-slate-500'
@@ -20,7 +21,8 @@ function initials(name) {
 }
 
 export default function Network() {
-  const uid = auth.currentUser?.uid
+  const { user } = useAuthStore()
+  const uid = user?.uid
   const navigate = useNavigate()
 
   const [myOrg, setMyOrg]               = useState('')
@@ -34,71 +36,74 @@ export default function Network() {
 
   async function loadAll() {
     if (!uid) { setLoading(false); return }
+    try {
+      // Load my profile for org
+      const mySnap = await getDoc(doc(db, 'profiles', uid))
+      const prof   = mySnap.data() ?? {}
+      setMyProfile(prof)
+      const org = prof.organization ?? ''
+      setMyOrg(org)
 
-    // Load my profile for org
-    const mySnap = await getDoc(doc(db, 'profiles', uid))
-    const prof   = mySnap.data() ?? {}
-    setMyProfile(prof)
-    const org = prof.organization ?? ''
-    setMyOrg(org)
+      // Load follows where I am follower (outgoing)
+      const outQ = query(collection(db, 'follows'), where('follower_id', '==', uid))
+      const outSnap = await getDocs(outQ)
 
-    // Load follows where I am follower (outgoing)
-    const outQ = query(collection(db, 'follows'), where('follower_id', '==', uid))
-    const outSnap = await getDocs(outQ)
+      // Load follows where I am following_id (incoming)
+      const inQ = query(collection(db, 'follows'), where('following_id', '==', uid))
+      const inSnap = await getDocs(inQ)
 
-    // Load follows where I am following_id (incoming)
-    const inQ = query(collection(db, 'follows'), where('following_id', '==', uid))
-    const inSnap = await getDocs(inQ)
-
-    // Build status map
-    const statuses = {}
-    outSnap.docs.forEach((d) => {
-      const data = d.data()
-      statuses[data.following_id] = data.approved ? 'following' : 'pending'
-    })
-    setFollowStatuses(statuses)
-
-    // Approved following — fetch their profiles
-    const approvedOut = outSnap.docs.filter((d) => d.data().approved)
-    const followingList = await Promise.all(
-      approvedOut.map(async (d) => {
+      // Build status map
+      const statuses = {}
+      outSnap.docs.forEach((d) => {
         const data = d.data()
-        const profSnap = await getDoc(doc(db, 'profiles', data.following_id))
-        return {
-          followDocId: d.id,
-          followingId: data.following_id,
-          profile: profSnap.exists() ? { uid: data.following_id, ...profSnap.data() } : { uid: data.following_id, preferred_name: 'Unknown' },
-        }
+        statuses[data.following_id] = data.approved ? 'following' : 'pending'
       })
-    )
-    setFollowing(followingList)
+      setFollowStatuses(statuses)
 
-    // Pending incoming requests
-    const pendingInDocs = inSnap.docs.filter((d) => !d.data().approved)
-    const pendingList = await Promise.all(
-      pendingInDocs.map(async (d) => {
-        const data = d.data()
-        const profSnap = await getDoc(doc(db, 'profiles', data.follower_id))
-        return {
-          followDocId: d.id,
-          followerId: data.follower_id,
-          profile: profSnap.exists() ? { uid: data.follower_id, ...profSnap.data() } : { uid: data.follower_id, preferred_name: 'Unknown' },
-        }
-      })
-    )
-    setPendingIn(pendingList)
+      // Approved following — fetch their profiles
+      const approvedOut = outSnap.docs.filter((d) => d.data().approved)
+      const followingList = await Promise.all(
+        approvedOut.map(async (d) => {
+          const data = d.data()
+          const profSnap = await getDoc(doc(db, 'profiles', data.following_id))
+          return {
+            followDocId: d.id,
+            followingId: data.following_id,
+            profile: profSnap.exists() ? { uid: data.following_id, ...profSnap.data() } : { uid: data.following_id, preferred_name: 'Unknown' },
+          }
+        })
+      )
+      setFollowing(followingList)
 
-    // Org members (excluding self and already-followed or pending)
-    if (org) {
-      const orgQ = query(collection(db, 'profiles'), where('organization', '==', org))
-      const orgSnap = await getDocs(orgQ)
-      const members = orgSnap.docs
-        .filter((d) => d.id !== uid)
-        .map((d) => ({ uid: d.id, ...d.data() }))
-      setOrgMembers(members)
+      // Pending incoming requests
+      const pendingInDocs = inSnap.docs.filter((d) => !d.data().approved)
+      const pendingList = await Promise.all(
+        pendingInDocs.map(async (d) => {
+          const data = d.data()
+          const profSnap = await getDoc(doc(db, 'profiles', data.follower_id))
+          return {
+            followDocId: d.id,
+            followerId: data.follower_id,
+            profile: profSnap.exists() ? { uid: data.follower_id, ...profSnap.data() } : { uid: data.follower_id, preferred_name: 'Unknown' },
+          }
+        })
+      )
+      setPendingIn(pendingList)
+
+      // Org members (excluding self and already-followed or pending)
+      if (org) {
+        const orgQ = query(collection(db, 'profiles'), where('organization', '==', org))
+        const orgSnap = await getDocs(orgQ)
+        const members = orgSnap.docs
+          .filter((d) => d.id !== uid)
+          .map((d) => ({ uid: d.id, ...d.data() }))
+        setOrgMembers(members)
+      }
+    } catch (err) {
+      console.error('Network load error:', err)
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   useEffect(() => { loadAll() }, [uid])

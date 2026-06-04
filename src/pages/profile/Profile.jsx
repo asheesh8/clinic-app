@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { auth, db } from '../../lib/firebase'
+import { db } from '../../lib/firebase'
 import {
   doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp
 } from 'firebase/firestore'
 import { CheckCircle, Users } from 'lucide-react'
+import { useAuthStore } from '../../stores/authStore'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ function Toast({ message, onDone }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Profile() {
+  const { user } = useAuthStore()
   const [activeTab, setActiveTab]   = useState(0)
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
@@ -218,19 +220,19 @@ export default function Profile() {
   // ── Load existing data ─────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const uid = auth.currentUser?.uid
+      const uid = user?.uid
       if (!uid) { setLoading(false); return }
 
       try {
         const [profSnap, prefSnap, followerSnap, followingSnap] = await Promise.all([
           getDoc(doc(db, 'profiles', uid)),
           getDoc(doc(db, 'workspace_preferences', uid)),
-          getDocs(query(collection(db, 'follows'), where('following_id', '==', uid), where('approved', '==', true))),
-          getDocs(query(collection(db, 'follows'), where('follower_id', '==', uid), where('approved', '==', true))),
+          getDocs(query(collection(db, 'follows'), where('following_id', '==', uid))),
+          getDocs(query(collection(db, 'follows'), where('follower_id', '==', uid))),
         ])
 
-        setFollowerCount(followerSnap.size)
-        setFollowingCount(followingSnap.size)
+        setFollowerCount(followerSnap.docs.filter(d => d.data().approved).length)
+        setFollowingCount(followingSnap.docs.filter(d => d.data().approved).length)
 
         if (profSnap.exists()) {
           const d = profSnap.data()
@@ -297,7 +299,7 @@ export default function Profile() {
       }
     }
     load()
-  }, [])
+  }, [user?.uid])
 
   // ── Save handlers ──────────────────────────────────────────────────────────
   async function saveIdentity() {
