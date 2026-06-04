@@ -35,7 +35,7 @@ export default function AppLayout({ children }) {
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3">
+      <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3 safe-top">
         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
           <HeartPulse size={18} className="text-white" />
         </div>
@@ -119,9 +119,9 @@ export default function AppLayout({ children }) {
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Mobile topbar */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-slate-200">
+        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-slate-200 safe-top">
           <button
             onClick={() => setOpen(true)}
             className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
@@ -134,7 +134,7 @@ export default function AppLayout({ children }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto flex flex-col min-h-0">
+        <main className="flex-1 overflow-y-auto flex flex-col min-h-0 safe-bottom">
           {children}
         </main>
       </div>
