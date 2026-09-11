@@ -1,36 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { auth, db } from '../../lib/firebase'
 import {
-  collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
-  query, where, orderBy, onSnapshot, serverTimestamp
+  collection, doc, updateDoc, query, where, orderBy, onSnapshot,
 } from 'firebase/firestore'
 import { useAuthStore } from '../../stores/authStore'
+import { loadConnections, displayName, initials, avatarBg } from '../../lib/people'
+import { ensureConversation, sendMessage } from '../../lib/messaging'
 import {
   MessageSquare, Search, Edit3, ArrowLeft, Send, X
 } from 'lucide-react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function avatarBg(role) {
-  if (!role) return 'bg-slate-500'
-  const r = role.toLowerCase()
-  if (
-    r.includes('physician') || r.includes('provider') ||
-    r.includes('nurse practitioner') || r.includes('aprn') ||
-    r.includes('md') || r.includes('do') || r.includes('np') || r.includes('pa')
-  ) return 'bg-blue-600'
-  if (
-    r.includes('nurse') || r.includes('nursing') ||
-    r.includes('rn') || r.includes('lpn') || r.includes('ma') ||
-    r.includes('medical assistant')
-  ) return 'bg-teal-600'
-  return 'bg-slate-500'
-}
-
-function initials(name) {
-  return (name ?? '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-}
 
 function formatConversationTime(ts) {
   if (!ts) return ''
@@ -87,36 +68,20 @@ function isSameDay(ts1, ts2) {
   )
 }
 
-function conversationId(uid1, uid2) {
-  return [uid1, uid2].sort().join('_')
-}
-
 // ─── New Message Modal ────────────────────────────────────────────────────────
 
-function NewMessageModal({ myUid, myOrg, myProfile, onClose, onSelectConversation }) {
+function NewMessageModal({ myUid, myProfile, onClose, onSelectConversation }) {
   const [search, setSearch] = useState('')
   const [teammates, setTeammates] = useState([])
   const [loading, setLoading] = useState(true)
 
+  // Org members plus anyone connected by an approved follow
   useEffect(() => {
-    async function loadTeammates() {
-      if (!myOrg) { setLoading(false); return }
-      try {
-        const snap = await getDocs(
-          query(collection(db, 'profiles'), where('organization', '==', myOrg))
-        )
-        const list = snap.docs
-          .filter((d) => d.id !== myUid)
-          .map((d) => ({ uid: d.id, ...d.data() }))
-        setTeammates(list)
-      } catch (err) {
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadTeammates()
-  }, [myUid, myOrg])
+    loadConnections(myUid, myProfile)
+      .then(setTeammates)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [myUid, myProfile])
 
   const filtered = teammates.filter((t) => {
     const name = (t.preferred_name ?? t.full_name ?? '').toLowerCase()
@@ -124,35 +89,17 @@ function NewMessageModal({ myUid, myOrg, myProfile, onClose, onSelectConversatio
   })
 
   async function handleSelect(teammate) {
-    const convId = conversationId(myUid, teammate.uid)
-    const convRef = doc(db, 'conversations', convId)
-    const convSnap = await getDoc(convRef)
-
-    if (!convSnap.exists()) {
-      const myName = myProfile?.preferred_name ?? myProfile?.full_name ?? 'Unknown'
-      const myRole = myProfile?.role ?? ''
-      const theirName = teammate.preferred_name ?? teammate.full_name ?? 'Unknown'
-      const theirRole = teammate.role ?? ''
-      await setDoc(convRef, {
-        participants: [myUid, teammate.uid].sort(),
-        participant_names: { [myUid]: myName, [teammate.uid]: theirName },
-        participant_roles: { [myUid]: myRole, [teammate.uid]: theirRole },
-        last_message: '',
-        last_message_time: serverTimestamp(),
-        last_sender_id: '',
-        unread_count: { [myUid]: 0, [teammate.uid]: 0 },
-        created_at: serverTimestamp(),
-      })
-    }
-
+    const convId = await ensureConversation(myUid, myProfile, {
+      uid: teammate.uid, name: displayName(teammate), role: teammate.role,
+    })
     onSelectConversation(convId)
     onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md flex flex-col max-h-[80vh]">
+      <div className="relative z-10 bg-white rounded-t-3xl sm:rounded-2xl shadow-xl border border-slate-200 w-full sm:max-w-md flex flex-col max-h-[85vh] safe-bottom">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <h3 className="text-base font-semibold text-slate-900">New Message</h3>
@@ -185,7 +132,7 @@ function NewMessageModal({ myUid, myOrg, myProfile, onClose, onSelectConversatio
             <div className="p-6 text-center text-sm text-slate-400">Loading teammates…</div>
           ) : filtered.length === 0 ? (
             <div className="p-6 text-center text-sm text-slate-400">
-              {teammates.length === 0 ? 'No teammates found in your organization.' : 'No results.'}
+              {teammates.length === 0 ? 'No teammates yet — follow people in Network to message them.' : 'No results.'}
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
@@ -225,7 +172,7 @@ export default function Messages() {
 
   const [conversations, setConversations] = useState([])
   const [selectedConvId, setSelectedConvId] = useState(null)
-  const [messages, setMessages] = useState([])
+  const [thread, setThread] = useState({ convId: null, list: [] })
   const [inputText, setInputText] = useState('')
   const [convSearch, setConvSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -235,8 +182,9 @@ export default function Messages() {
   const inputRef = useRef(null)
   const navStateHandled = useRef(false)
 
-  // Derived: selected conversation object
+  // Derived: selected conversation object + its messages
   const selectedConv = conversations.find((c) => c.id === selectedConvId) ?? null
+  const messages = thread.convId === selectedConvId ? thread.list : []
 
   // Other person in the conversation
   function otherParticipant(conv) {
@@ -266,14 +214,14 @@ export default function Messages() {
 
   // ── Subscribe to messages for selected conversation ────────────────────────
   useEffect(() => {
-    if (!selectedConvId) { setMessages([]); return }
+    if (!selectedConvId) return
     const q = query(
       collection(db, 'conversations', selectedConvId, 'messages'),
       orderBy('created_at', 'asc')
     )
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      setMessages(list)
+      setThread({ convId: selectedConvId, list })
     })
     return () => unsub()
   }, [selectedConvId])
@@ -292,7 +240,7 @@ export default function Messages() {
   // ── Auto-scroll to bottom on new messages ─────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [thread])
 
   // ── Handle navigation state (from Network/Compatibility pages) ─────────────
   useEffect(() => {
@@ -304,33 +252,12 @@ export default function Messages() {
       // Clear nav state
       navigate('/messages', { replace: true, state: {} })
 
-      const convId = conversationId(myUid, startConversationWith)
-      const convRef = doc(db, 'conversations', convId)
-
-      getDoc(convRef).then(async (snap) => {
-        if (!snap.exists()) {
-          const myName = profile?.preferred_name ?? profile?.full_name ?? 'Unknown'
-          const myRole = profile?.role ?? ''
-          await setDoc(convRef, {
-            participants: [myUid, startConversationWith].sort(),
-            participant_names: {
-              [myUid]: myName,
-              [startConversationWith]: teammateName ?? 'Unknown',
-            },
-            participant_roles: {
-              [myUid]: myRole,
-              [startConversationWith]: teammateRole ?? '',
-            },
-            last_message: '',
-            last_message_time: serverTimestamp(),
-            last_sender_id: '',
-            unread_count: { [myUid]: 0, [startConversationWith]: 0 },
-            created_at: serverTimestamp(),
-          })
-        }
-        setSelectedConvId(convId)
-        setShowChatOnMobile(true)
-      }).catch(console.error)
+      ensureConversation(myUid, profile, { uid: startConversationWith, name: teammateName, role: teammateRole })
+        .then((convId) => {
+          setSelectedConvId(convId)
+          setShowChatOnMobile(true)
+        })
+        .catch(console.error)
     }
   }, [location.state, myUid, profile, navigate])
 
@@ -346,31 +273,13 @@ export default function Messages() {
     const text = inputText.trim()
     if (!text || !selectedConvId || !myUid) return
 
-    const myName = profile?.preferred_name ?? profile?.full_name ?? 'Unknown'
     const conv = conversations.find((c) => c.id === selectedConvId)
     const other = otherParticipant(conv)
 
     setInputText('')
 
     try {
-      // Add message
-      await addDoc(collection(db, 'conversations', selectedConvId, 'messages'), {
-        sender_id: myUid,
-        sender_name: myName,
-        text,
-        created_at: serverTimestamp(),
-        read: false,
-      })
-
-      // Update conversation metadata
-      const currentOtherUnread = conv?.unread_count?.[other?.uid] ?? 0
-      await updateDoc(doc(db, 'conversations', selectedConvId), {
-        last_message: text,
-        last_message_time: serverTimestamp(),
-        last_sender_id: myUid,
-        [`unread_count.${myUid}`]: 0,
-        [`unread_count.${other?.uid}`]: currentOtherUnread + 1,
-      })
+      await sendMessage(selectedConvId, myUid, profile, other?.uid, text)
     } catch (err) {
       console.error('Failed to send message:', err)
     }
@@ -404,7 +313,7 @@ export default function Messages() {
       `}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-900">Messages</h2>
+          <h2 className="text-lg font-bold text-slate-900">Messages 💬</h2>
           <button
             onClick={() => setShowModal(true)}
             title="New message"
@@ -539,7 +448,7 @@ export default function Messages() {
             <div className="flex-1 overflow-y-auto flex flex-col gap-2 p-4">
               {messages.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center">
-                  <p className="text-sm text-slate-400">No messages yet. Say hello!</p>
+                  <p className="text-sm text-slate-400">No messages yet. Say hello! 👋</p>
                 </div>
               ) : (
                 <>
@@ -614,7 +523,6 @@ export default function Messages() {
       {showModal && (
         <NewMessageModal
           myUid={myUid}
-          myOrg={profile?.organization}
           myProfile={profile}
           onClose={() => setShowModal(false)}
           onSelectConversation={(convId) => {

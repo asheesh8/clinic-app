@@ -1,0 +1,78 @@
+// Firestore security rules for FlowSync.
+// Deploy: Firebase Console → Firestore Database → Rules → paste → Publish
+// (or `firebase deploy --only firestore:rules` with the Firebase CLI).
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow write: if signedIn() && me() == uid;
+    }
+
+    match /workspace_preferences/{uid} {
+      allow read: if signedIn();
+      allow write: if signedIn() && me() == uid;
+    }
+
+    match /workflows/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.resource.data.user_id == me();
+      allow delete: if signedIn() && resource.data.user_id == me();
+    }
+
+    match /custom_workflows/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.created_by == me();
+      // The creator can edit anything; anyone else may only add people to shared_with.
+      allow update: if signedIn() && (
+        resource.data.created_by == me() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shared_with'])
+      );
+      allow delete: if signedIn() && resource.data.created_by == me();
+    }
+
+    match /follows/{id} {
+      allow read: if signedIn();
+      // Instant follows only for public profiles; everyone else gets a pending request.
+      allow create: if signedIn()
+        && request.resource.data.follower_id == me()
+        && id == me() + '_' + request.resource.data.following_id
+        && (request.resource.data.approved == false
+            || get(/databases/$(database)/documents/profiles/$(request.resource.data.following_id)).data.visibility == 'public');
+      allow update: if signedIn() && resource.data.following_id == me();
+      allow delete: if signedIn() && (resource.data.follower_id == me() || resource.data.following_id == me());
+    }
+
+    match /interaction_ratings/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.resource.data.rater_id == me()
+        && id == me() + '_' + request.resource.data.ratee_id
+        && request.resource.data.hearts is int
+        && request.resource.data.hearts >= 1 && request.resource.data.hearts <= 5;
+    }
+
+    match /compatibility_scores/{id} {
+      allow read: if signedIn() && (resource.data.user_a == me() || resource.data.user_b == me());
+      allow write: if signedIn() && request.resource.data.user_a == me();
+    }
+
+    match /conversations/{convId} {
+      // resource == null lets the app check whether a conversation exists before creating it.
+      allow read: if signedIn() && (resource == null || me() in resource.data.participants);
+      allow create: if signedIn() && me() in request.resource.data.participants;
+      allow update: if signedIn() && me() in resource.data.participants;
+
+      match /messages/{msgId} {
+        allow read: if signedIn()
+          && me() in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow create: if signedIn()
+          && request.resource.data.sender_id == me()
+          && me() in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+      }
+    }
+  }
+}

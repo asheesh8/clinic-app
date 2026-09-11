@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { db } from '../../lib/firebase'
-import {
-  collection, query, where, getDocs, doc, getDoc
-} from 'firebase/firestore'
+import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useAuthStore } from '../../stores/authStore'
 import { Building2, Users, Star, Mail } from 'lucide-react'
 
@@ -78,7 +77,7 @@ export default function OrgProfile() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-slate-200 rounded-xl w-64" />
           <div className="h-4 bg-slate-100 rounded-xl w-40" />
@@ -92,7 +91,7 @@ export default function OrgProfile() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-8">
+    <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
@@ -100,7 +99,7 @@ export default function OrgProfile() {
             <Building2 size={20} className="text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">{myOrg || 'Your Organization'}</h2>
+            <h2 className="text-2xl font-bold text-slate-900">🏥 {myOrg || 'Your Organization'}</h2>
             <p className="text-slate-500 text-sm">{members.length} member{members.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
@@ -112,7 +111,7 @@ export default function OrgProfile() {
       {/* Stats tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col gap-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Members</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">👥 Total Members</p>
           <p className="text-3xl font-bold text-slate-900">{members.length}</p>
           <div className="flex items-center gap-1 mt-1">
             <Users size={14} className="text-blue-500" />
@@ -120,7 +119,7 @@ export default function OrgProfile() {
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col gap-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Workflows Completed</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">📋 Workflows Completed</p>
           <p className="text-3xl font-bold text-slate-900">{totalWorkflows}</p>
           <div className="flex items-center gap-1 mt-1">
             <Star size={14} className="text-amber-500" />
@@ -128,7 +127,7 @@ export default function OrgProfile() {
           </div>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col gap-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Most Active</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">🏆 Most Active</p>
           {mostActive ? (
             <>
               <p className="text-lg font-bold text-slate-900 truncate">
@@ -162,9 +161,10 @@ export default function OrgProfile() {
               const count   = workflowCounts[m.uid] ?? 0
               const isMe    = m.uid === uid
               return (
-                <div
+                <Link
                   key={m.uid}
-                  className={`rounded-xl border p-4 flex flex-col items-center text-center gap-2 ${
+                  to={`/people/${m.uid}`}
+                  className={`rounded-xl border p-4 flex flex-col items-center text-center gap-2 transition-colors hover:border-blue-300 ${
                     isMe ? 'border-blue-200 bg-blue-50' : 'border-slate-100 bg-slate-50'
                   }`}
                 >
@@ -182,7 +182,7 @@ export default function OrgProfile() {
                     <Star size={12} className="text-amber-400" />
                     <span>{count} workflow{count !== 1 ? 's' : ''} completed</span>
                   </div>
-                </div>
+                </Link>
               )
             })}
           </div>

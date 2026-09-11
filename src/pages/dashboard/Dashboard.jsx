@@ -10,27 +10,27 @@ const cards = [
     to: '/workflow',
     icon: ClipboardList,
     color: 'blue',
-    title: 'My Workflows',
+    title: '📋 My Workflows',
     desc: 'Define how you like to run each visit type — timing, order, preferences.',
     cta: 'Set up workflows',
     status: 'pending',
     statusLabel: 'Not started',
   },
   {
-    to: '/compatibility',
+    to: '/similarity',
     icon: BarChart2,
     color: 'teal',
-    title: 'Team Compatibility',
-    desc: 'Compare your workflows with a teammate and see your alignment score.',
+    title: '💞 Team Similarity',
+    desc: 'Compare your workflows with a teammate, see your similarity score, and build a hybrid workflow.',
     cta: 'View scores',
-    status: 'locked',
-    statusLabel: 'Complete a workflow first',
+    status: 'pending',
+    statusLabel: 'Compare with a teammate',
   },
   {
     to: '/profile',
     icon: User,
     color: 'violet',
-    title: 'My Profile',
+    title: '👤 My Profile',
     desc: 'Set your preferred title, pronouns, workspace needs, and equipment preferences.',
     cta: 'Edit profile',
     status: 'pending',
@@ -40,8 +40,8 @@ const cards = [
     to: '/network',
     icon: Users,
     color: 'cyan',
-    title: 'My Network',
-    desc: 'Follow teammates and manage who can see your workflows.',
+    title: '🤝 My Network',
+    desc: 'Follow teammates — inside or outside your organization — and manage who can see your profile.',
     cta: 'View network',
     status: 'pending',
     statusLabel: 'Not set up',
@@ -50,7 +50,7 @@ const cards = [
     to: '/org',
     icon: Building2,
     color: 'orange',
-    title: 'Organization',
+    title: '🏥 Organization',
     desc: "See your clinic's members, workflow completion stats, and team activity.",
     cta: 'View org',
     status: 'pending',
@@ -74,18 +74,17 @@ const statusIcon = {
 
 export default function Dashboard() {
   const { profile } = useAuthStore()
-  const firstName   = profile?.preferred_name?.split(' ')[0] ?? 'there'
   const hour        = new Date().getHours()
-  const greeting    = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const greeting    = hour < 12 ? 'Good morning ☀️' : hour < 17 ? 'Good afternoon 🌤️' : 'Good evening 🌙'
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
 
       {/* Header */}
       <div className="mb-8">
         <p className="text-sm font-medium text-blue-600 mb-1">{greeting}</p>
         <h2 className="text-2xl font-bold text-slate-900">
-          {profile?.preferred_name ?? 'Welcome'}
+          {profile?.preferred_name ?? 'Welcome'} 👋
         </h2>
         <p className="text-slate-500 mt-1 text-sm">
           {profile?.role ? `${profile.role} · ` : ''}{profile?.organization ?? 'Your Clinic'}
@@ -95,7 +94,7 @@ export default function Dashboard() {
       {/* Setup progress banner */}
       <div className="bg-blue-600 rounded-2xl p-5 mb-8 flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
-          <p className="text-white font-semibold">Complete your setup</p>
+          <p className="text-white font-semibold">🚀 Complete your setup</p>
           <p className="text-blue-100 text-sm mt-0.5">
             Fill out your workflow preferences so teammates can see how you work best.
           </p>
@@ -104,7 +103,7 @@ export default function Dashboard() {
           to="/workflow"
           className="shrink-0 bg-white text-blue-700 font-semibold text-sm px-4 py-2.5 rounded-xl hover:bg-blue-50 transition-colors"
         >
-          Get started →
+          Get started ✨
         </Link>
       </div>
 
@@ -155,7 +154,7 @@ export default function Dashboard() {
       <div className="mt-8 bg-slate-100 rounded-2xl p-5">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">💡 Quick tip</p>
         <p className="text-sm text-slate-600 leading-relaxed">
-          Start by filling out your <strong className="text-slate-800">30-minute visit workflow</strong> — it's the baseline profile every team member should complete. It takes about 5 minutes and unlocks compatibility scoring.
+          Start by filling out your <strong className="text-slate-800">30-minute visit workflow</strong> — it's the baseline profile every team member should complete. It takes about 5 minutes and unlocks similarity scoring.
         </p>
       </div>
     </div>

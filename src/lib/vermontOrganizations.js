@@ -34,6 +34,8 @@ export const VT_ORGANIZATIONS = [
   { name: 'Community Health Centers of Rutland Region',       city: 'Brandon',           type: 'Community Health Center' },
   { name: 'Community Health Centers of Rutland Region',       city: 'Castleton',         type: 'Community Health Center' },
   { name: 'Battenkill Valley Health Center',                  city: 'Arlington',         type: 'Community Health Center' },
+  { name: 'Ammonoosuc Community Health Services',             city: 'Littleton, NH',     type: 'Community Health Center' },
+  { name: 'Ammonoosuc Community Health Services',             city: 'Woodsville, NH',    type: 'Community Health Center' },
   { name: 'Gifford Health Care',                              city: 'Randolph',          type: 'Community Health Center' },
   { name: 'Gifford Health Care',                              city: 'Barre',             type: 'Community Health Center' },
   { name: 'Gifford Health Care',                              city: 'Berlin',            type: 'Community Health Center' },

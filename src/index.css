@@ -11,8 +11,74 @@
   }
 }
 
-/* iOS safe area helpers */
-.safe-top    { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-.safe-left   { padding-left: env(safe-area-inset-left); }
-.safe-right  { padding-right: env(safe-area-inset-right); }
+/* User colorway: derive every blue-* shade from one accent color.
+   Unlayered, so it overrides Tailwind's @layer theme values. */
+:root[data-accent] {
+  --color-blue-50:  color-mix(in oklab, var(--accent) 7%,  white);
+  --color-blue-100: color-mix(in oklab, var(--accent) 14%, white);
+  --color-blue-200: color-mix(in oklab, var(--accent) 27%, white);
+  --color-blue-300: color-mix(in oklab, var(--accent) 45%, white);
+  --color-blue-400: color-mix(in oklab, var(--accent) 68%, white);
+  --color-blue-500: color-mix(in oklab, var(--accent) 86%, white);
+  --color-blue-600: var(--accent);
+  --color-blue-700: color-mix(in oklab, var(--accent) 84%, black);
+  --color-blue-800: color-mix(in oklab, var(--accent) 70%, black);
+  --color-blue-900: color-mix(in oklab, var(--accent) 58%, black);
+  --color-blue-950: color-mix(in oklab, var(--accent) 40%, black);
+}
+
+/* Stop iOS Safari from zooming into form fields (it zooms below 16px) */
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Horizontal tab strips: scroll without a visible bar */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* iOS safe area helpers (utilities, so responsive variants like md:safe-bottom work) */
+@utility safe-top    { padding-top: env(safe-area-inset-top); }
+@utility safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+@utility safe-left   { padding-left: env(safe-area-inset-left); }
+@utility safe-right  { padding-right: env(safe-area-inset-right); }
+
+/* Similarity mood animations */
+.fs-heart {
+  position: absolute;
+  bottom: 60%;
+  font-size: 0.8rem;
+  opacity: 0;
+  animation: fs-float 2.4s ease-in infinite;
+  pointer-events: none;
+}
+@keyframes fs-float {
+  0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(-22px) scale(1.1); opacity: 0; }
+}
+
+.fs-argue-left,
+.fs-argue-right {
+  display: inline-block;
+  animation: fs-argue 0.9s ease-in-out infinite;
+}
+.fs-argue-right { animation-delay: 0.45s; }
+@keyframes fs-argue {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25%      { transform: translateX(3px) rotate(8deg); }
+  75%      { transform: translateX(-2px) rotate(-6deg); }
+}
+
+.fs-pop {
+  display: inline-block;
+  animation: fs-pop 0.9s ease-in-out infinite;
+}
+@keyframes fs-pop {
+  0%, 100% { transform: scale(0.8); }
+  50%      { transform: scale(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-heart, .fs-argue-left, .fs-argue-right, .fs-pop { animation: none; }
+  .fs-heart { opacity: 1; }
+}

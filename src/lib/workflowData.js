@@ -1,13 +1,15 @@
 // Workflow phase and task definitions for all visit types and roles.
-// Each task has a unique id (used as Firestore answer key), a label, and
-// an optional flag `hasTime` for phases where timing matters.
+// Each task has a unique id (used as Firestore answer key) and a label.
+// A phase with a `timing` string asks "Do you agree with this time interval?"
+// at the section level. Tasks may set `askTimeWhenNo` to ask for a preferred
+// number of minutes when answered "No".
 
 export const VISIT_TYPES = [
   { id: 'standard_30min',   label: '30-Min Primary Care Visit',       emoji: '🩺', available: true  },
   { id: 'joint_injection',  label: 'Joint Injection Visit',           emoji: '💉', available: true  },
   { id: 'new_patient',      label: 'New Patient Visit',               emoji: '📋', available: true  },
-  { id: 'awv',              label: 'Medicare Annual Wellness (AWV)',   emoji: '🏥', available: false },
-  { id: 'omt',              label: 'OMT Visit',                       emoji: '🖐', available: false },
+  { id: 'awv',              label: 'Medicare Annual Wellness (AWV)',   emoji: '🏥', available: true  },
+  { id: 'omt',              label: 'OMT Visit',                       emoji: '🖐', available: true  },
 ]
 
 export const ROLES = [
@@ -20,16 +22,92 @@ export const ROLES = [
  * Returns 'nursing' | 'provider' | null (null = ambiguous, show picker).
  */
 export const PROFILE_TO_WORKFLOW_ROLE = {
-  'Physician':           'provider',
-  'Nurse Practitioner':  'provider',
-  'APRN':                'provider',
-  'Registered Nurse':    'nursing',
-  'Medical Assistant':   'nursing',
-  'Other':               null,
+  'Physician':                 'provider',
+  'Nurse Practitioner':        'provider',
+  'APRN':                      'provider',
+  'Physician Assistant':       'provider',
+  'Registered Nurse':          'nursing',
+  'Licensed Practical Nurse':  'nursing',
+  'Medical Assistant':         'nursing',
+  'Office / Admin Staff':      null,
+  'Non-clinical Team Member':  null,
+  'Other':                     null,
 }
+
+/** A friendly emoji for a workflow section, based on its name. */
+const PHASE_EMOJIS = [
+  [/before|pre-visit/i, '🚪'], [/rooming|vitals/i, '🛏️'], [/history|complaint/i, '📝'],
+  [/preventive|screening/i, '🛡️'], [/notification/i, '📣'], [/risk assessment/i, '📊'],
+  [/structural|exam/i, '🩺'], [/after|exit/i, '👋'], [/turnover/i, '🧹'], [/documentation|coding/i, '📄'],
+  [/timing/i, '⏱️'], [/omt/i, '🖐️'], [/procedure/i, '💉'], [/education/i, '🎓'], [/consent/i, '✍️'],
+  [/follow-up/i, '📅'], [/opening/i, '🤝'], [/assessment|plan|diagnosis/i, '🧠'],
+]
+
+export function phaseEmoji(name) {
+  return PHASE_EMOJIS.find(([re]) => re.test(name))?.[1] ?? '📌'
+}
+
+export const PROFILE_ROLES = Object.keys(PROFILE_TO_WORKFLOW_ROLE)
 
 export function inferWorkflowRole(profileRole) {
   return PROFILE_TO_WORKFLOW_ROLE[profileRole] ?? null
+}
+
+/**
+ * Nursing and provider task ids differ only by a role marker in the prefix
+ * (e.g. `s30n_hx_hpi` vs `s30p_hx_hpi`). Stripping it lets a nurse's answers
+ * be compared against a provider's answers for the same step.
+ */
+const ROLE_PREFIXES = {
+  s30n: 's30', s30p: 's30',
+  jin: 'ji',   jip: 'ji',
+  npn: 'np',   npp: 'np',
+  awvn: 'awv', awvp: 'awv',
+  omtn: 'omt', omtp: 'omt',
+}
+
+export function canonicalTaskId(taskId) {
+  const i = taskId.indexOf('_')
+  if (i < 0) return taskId
+  const prefix = taskId.slice(0, i)
+  return (ROLE_PREFIXES[prefix] ?? prefix) + taskId.slice(i)
+}
+
+/**
+ * Parse a timing string like "2–3 min" or "5 min" into minutes.
+ * Returns { min, max, mid } or null when there is no timing.
+ */
+export function parseTiming(timing) {
+  if (!timing) return null
+  const nums = timing.match(/\d+(\.\d+)?/g)?.map(Number) ?? []
+  if (nums.length === 0) return null
+  const min = nums[0]
+  const max = nums[1] ?? nums[0]
+  return { min, max, mid: (min + max) / 2 }
+}
+
+/**
+ * Minutes a person wants for a phase: their preferred time when they
+ * disagreed with the typical interval, otherwise the typical midpoint.
+ * For phases without a typical interval (custom templates) this is the sum
+ * of the "time desired" on tasks they answered Yes.
+ */
+export function phaseMinutes(phase, answers = {}, phaseTimes = {}) {
+  const typical = parseTiming(phase.timing)
+  const pt = phaseTimes[phase.phase]
+  if (typical) {
+    if (pt?.agree === false && Number.isFinite(pt.preferred_min)) return pt.preferred_min
+    return typical.mid
+  }
+  const taskSum = phase.tasks.reduce((sum, t) => {
+    const a = answers[t.id]
+    return a?.selected === true && Number.isFinite(a.preferred_time_min) ? sum + a.preferred_time_min : sum
+  }, 0)
+  return taskSum || null
+}
+
+export function totalMinutes(phases, answers, phaseTimes) {
+  return phases.reduce((sum, p) => sum + (phaseMinutes(p, answers, phaseTimes) ?? 0), 0)
 }
 
 // ─── standard_30min ──────────────────────────────────────────────────────────
@@ -105,6 +183,7 @@ const standard_30min_nursing = [
     hasTime: true,
     tasks: [
       { id: 's30n_after_edu',              label: 'Patient education (new meds, instructions, follow-up)' },
+      { id: 's30n_after_provider_edu',     label: 'Prefer the provider handles patient education at the end of the visit' },
       { id: 's30n_after_avs',              label: 'Provide and review AVS with patient' },
       { id: 's30n_after_qa',               label: 'Answer questions + confirm understanding (teach-back)' },
       { id: 's30n_after_followup',         label: 'Schedule follow-up or referrals' },
@@ -122,6 +201,7 @@ const standard_30min_nursing = [
       { id: 's30n_turn_restock',           label: 'Restock supplies' },
       { id: 's30n_turn_finalize_doc',      label: 'Finalize nursing documentation in EMR' },
       { id: 's30n_turn_flag_orders',       label: 'Flag outstanding orders for provider signature' },
+      { id: 's30n_turn_add_to_rooming',    label: 'Prefer to add this time to the rooming time at the beginning of the visit' },
     ],
   },
   {
@@ -129,11 +209,21 @@ const standard_30min_nursing = [
     timing: null,
     hasTime: false,
     tasks: [
+      { id: 's30n_doc_nursing_assist',     label: 'Should nursing assist with provider-preferred documentation' },
       { id: 's30n_doc_last_encounter',     label: 'Should nursing pull copy of last visit encounter' },
       { id: 's30n_doc_consult_notes',      label: 'Copy of relevant consult notes' },
       { id: 's30n_doc_recent_labs',        label: 'Copy of recent labs' },
       { id: 's30n_doc_imaging',            label: 'Copy of recent imaging/test results' },
       { id: 's30n_doc_print_copies',       label: 'Print copies if patient requests' },
+      { id: 's30n_doc_discuss_workflow',   label: 'Amenable to discussing workflow differences or suggestions with teammates' },
+    ],
+  },
+  {
+    phase: 'Visit Timing',
+    timing: null,
+    hasTime: false,
+    tasks: [
+      { id: 's30n_vt_15_enough',           label: '15 minutes out of a 30-minute visit is enough time to complete nursing patient prep for the provider', askTimeWhenNo: true },
     ],
   },
 ]
@@ -199,12 +289,21 @@ const standard_30min_provider = [
     timing: null,
     hasTime: false,
     tasks: [
+      { id: 's30p_doc_nursing_assist',     label: 'Should nursing assist with provider-preferred documentation' },
       { id: 's30p_doc_last_encounter',     label: 'Should nursing pull copy of last visit encounter' },
       { id: 's30p_doc_consult_notes',      label: 'Copy of relevant consult notes' },
       { id: 's30p_doc_recent_labs',        label: 'Copy of recent labs' },
       { id: 's30p_doc_imaging',            label: 'Copy of recent imaging/test results' },
       { id: 's30p_doc_print_copies',       label: 'Print copies if patient requests' },
       { id: 's30p_doc_discuss_workflow',   label: 'Interested in discussing workflow differences with teammates' },
+    ],
+  },
+  {
+    phase: 'Visit Timing',
+    timing: null,
+    hasTime: false,
+    tasks: [
+      { id: 's30p_vt_15_enough',           label: '15 minutes out of a 30-minute visit is enough time to complete the provider portion of the visit', askTimeWhenNo: true },
     ],
   },
 ]
@@ -454,6 +553,192 @@ const new_patient_provider = [
   },
 ]
 
+// ─── awv (Medicare Annual Wellness Visit) ─────────────────────────────────────
+
+const awv_nursing = [
+  {
+    phase: 'Pre-Visit Prep',
+    timing: '3–4 min',
+    hasTime: true,
+    tasks: [
+      { id: 'awvn_pre_visit_type',         label: 'Confirm visit type (Initial AWV, Subsequent AWV, or Welcome to Medicare/IPPE)' },
+      { id: 'awvn_pre_eligibility',        label: 'Confirm no AWV in the past 12 months (eligibility check)' },
+      { id: 'awvn_pre_pull_records',       label: 'Pull problem list, medication list, prior AWV, outstanding screenings/immunizations, specialist notes, recent labs' },
+      { id: 'awvn_pre_forms',              label: 'Prepare AWV forms (HRA, PHQ-9, cognitive screen, fall risk, ADL/iADL, advance directive status)' },
+    ],
+  },
+  {
+    phase: 'Patient Rooming',
+    timing: '4–5 min',
+    hasTime: true,
+    tasks: [
+      { id: 'awvn_room_vitals',            label: 'Vital signs (BP, HR, height, weight, BMI — no temp unless indicated)' },
+      { id: 'awvn_room_vision',            label: 'Vision screen (Snellen chart)' },
+      { id: 'awvn_room_hearing',           label: 'Hearing screen (whisper test or validated tool)' },
+      { id: 'awvn_room_questionnaires',    label: 'Administer questionnaires (HRA, PHQ-2 → PHQ-9, Mini-Cog/MoCA, fall risk, ADL/iADL)' },
+      { id: 'awvn_room_advance_directive', label: 'Check advance directive — does the patient have one on file?' },
+      { id: 'awvn_room_update_history',    label: 'Update medication list, allergies, surgical/hospitalization history, family history' },
+    ],
+  },
+]
+
+const awv_provider = [
+  {
+    phase: 'Pre-Visit Prep',
+    timing: '3–4 min',
+    hasTime: true,
+    tasks: [
+      { id: 'awvp_pre_prior_awv',          label: 'Review prior AWV note and personalized prevention plan' },
+      { id: 'awvp_pre_care_gaps',          label: 'Identify care gaps (overdue labs, screenings, vaccines)' },
+      { id: 'awvp_pre_chronic',            label: 'Note chronic conditions requiring prevention plan updates' },
+      { id: 'awvp_pre_flags',              label: 'Review flagged cognitive or functional concerns from prior visit' },
+    ],
+  },
+  {
+    phase: 'Opening',
+    timing: '2–3 min',
+    hasTime: true,
+    tasks: [
+      { id: 'awvp_open_purpose',           label: 'Explain the purpose: prevention and planning, not a full physical' },
+      { id: 'awvp_open_billing',           label: 'Set billing expectations if medical problems are addressed (separate E/M, modifier 25)' },
+      { id: 'awvp_open_hra',               label: 'Review HRA responses with the patient as a conversation guide' },
+      { id: 'awvp_open_ask',               label: 'Ask open-ended: "How have you been feeling overall?"' },
+    ],
+  },
+  {
+    phase: 'Health Risk Assessment Review',
+    timing: '4–5 min',
+    hasTime: true,
+    tasks: [
+      { id: 'awvp_hra_chronic',            label: 'Chronic disease status (diabetes, HTN, COPD, heart disease, CKD)' },
+      { id: 'awvp_hra_function',           label: 'Functional status (ADLs, iADLs, new limitations)' },
+      { id: 'awvp_hra_falls',              label: 'Fall risk (falls in past 12 months, fear of falling, home hazards)' },
+      { id: 'awvp_hra_cognitive',          label: 'Cognitive assessment (Mini-Cog/MoCA results; CPT 99483 workup if impairment)' },
+      { id: 'awvp_hra_mood',               label: 'Mood and mental health (PHQ-9, isolation, caregiver stress)' },
+      { id: 'awvp_hra_substance',          label: 'Substance use (AUDIT-C, tobacco, recreational drugs)' },
+      { id: 'awvp_hra_nutrition_sleep',    label: 'Nutrition and sleep (weight changes, apnea symptoms)' },
+      { id: 'awvp_hra_safety',             label: 'Safety (driving, home safety, elder abuse screen)' },
+      { id: 'awvp_hra_social',             label: 'Social history (living situation, support system, financial stress)' },
+    ],
+  },
+]
+
+// ─── omt (Osteopathic Manipulative Treatment) ─────────────────────────────────
+
+const omt_nursing = [
+  {
+    phase: 'Pre-Visit Prep',
+    timing: '2–3 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtn_pre_review_chart',       label: 'Review chart (visit type, regions to treat, prior OMT response, diagnosis)' },
+      { id: 'omtn_pre_contraindications',  label: 'Check contraindications (fracture, malignancy, severe osteoporosis, infection, anticoagulation, carotid/vertebral disease, recent surgery)' },
+      { id: 'omtn_pre_room_setup',         label: 'Room setup (treatment table, step stool, gown/drape, pillow/bolster)' },
+      { id: 'omtn_pre_consent_form',       label: 'Consent form available if required by practice' },
+    ],
+  },
+  {
+    phase: 'Patient Rooming & Vitals',
+    timing: '3–4 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtn_room_vitals',            label: 'Vital signs (BP, HR, RR, temp, weight)' },
+      { id: 'omtn_room_pain',              label: 'Pain score — location and severity (baseline)' },
+      { id: 'omtn_room_function',          label: 'Functional assessment (mobility limitations, ADL impact)' },
+      { id: 'omtn_room_cc',                label: "Document chief complaint in the patient's own words" },
+      { id: 'omtn_room_gown_position',     label: 'Gown patient if needed and position on the treatment table' },
+    ],
+  },
+  {
+    phase: 'During OMT',
+    timing: '8–10 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtn_proc_positioning',       label: 'Remain available for positioning assistance' },
+      { id: 'omtn_proc_monitor',           label: 'Monitor patient comfort and communication' },
+      { id: 'omtn_proc_chaperone',         label: 'Be present as chaperone if required' },
+    ],
+  },
+  {
+    phase: 'Post-Procedure',
+    timing: '2–3 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtn_post_sit_slowly',        label: 'Assist patient to sitting slowly (orthostatic precaution)' },
+      { id: 'omtn_post_observe',           label: 'Keep patient seated and observed 3–5 minutes' },
+      { id: 'omtn_post_recheck_bp',        label: 'Recheck BP if hypertensive or symptomatic' },
+      { id: 'omtn_post_document',          label: 'Document techniques, regions treated, response, pre/post pain score' },
+    ],
+  },
+]
+
+const omt_provider = [
+  {
+    phase: 'Pre-Visit Prep',
+    timing: '2–3 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtp_pre_prior_notes',        label: 'Review prior OMT notes (techniques, regions, response)' },
+      { id: 'omtp_pre_imaging',            label: 'Review any new imaging (rule out structural contraindications)' },
+      { id: 'omtp_pre_meds',               label: 'Review medications (muscle relaxants, pain meds, anticoagulants)' },
+      { id: 'omtp_pre_plan_technique',     label: 'Plan likely technique (HVLA, MFR, counterstrain, ME, cranial/BLT, soft tissue/articulatory)' },
+    ],
+  },
+  {
+    phase: 'Opening',
+    timing: '3–4 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtp_open_greet',             label: 'Greet, confirm identity and visit purpose, set agenda' },
+      { id: 'omtp_open_hpi',               label: 'Brief HPI (location, onset, severity, aggravating/relieving factors, functional limits, prior OMT/PT, trauma)' },
+      { id: 'omtp_open_meds_allergies',    label: 'Review medications and confirm allergies' },
+    ],
+  },
+  {
+    phase: 'Structural Exam',
+    timing: '5–6 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtp_exam_posture_gait',      label: 'Postural and gait assessment' },
+      { id: 'omtp_exam_regional',          label: 'Regional screening, tissue texture, asymmetry, ROM, tenderness' },
+      { id: 'omtp_exam_tart',              label: 'Document TART findings' },
+      { id: 'omtp_exam_neuro_red_flags',   label: 'Neurological screen if indicated and rule out red flags' },
+    ],
+  },
+  {
+    phase: 'Diagnosis & Consent',
+    timing: '2–3 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtp_dx_somatic',             label: 'Identify somatic dysfunction by region and type' },
+      { id: 'omtp_dx_select_technique',    label: 'Select technique by age, tolerance, acuity, contraindications' },
+      { id: 'omtp_consent_explain',        label: 'Explain techniques, risks, and alternatives in plain language' },
+      { id: 'omtp_consent_cervical',       label: 'Explicit consent for cervical HVLA (vertebral artery risk)' },
+      { id: 'omtp_consent_document',       label: 'Document consent' },
+    ],
+  },
+  {
+    phase: 'OMT Procedure',
+    timing: '8–10 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtp_proc_sequence',          label: 'Sequence treatment: global/soft first, primary dysfunction, compensatory regions, global finish' },
+      { id: 'omtp_proc_reassess',          label: 'Reassess after each technique' },
+      { id: 'omtp_proc_communicate',       label: 'Communicate throughout; stop for dizziness, radiating pain, or neuro symptoms' },
+    ],
+  },
+  {
+    phase: 'Post-Procedure Assessment',
+    timing: '2–3 min',
+    hasTime: true,
+    tasks: [
+      { id: 'omtp_post_tart',              label: 'Reassess TART findings (ROM, tissue texture, tenderness)' },
+      { id: 'omtp_post_pain',              label: 'Pain score reassessment compared to baseline' },
+      { id: 'omtp_post_symptoms',          label: 'Check the patient is not dizzy or symptomatic' },
+    ],
+  },
+]
+
 // ─── Master lookup ────────────────────────────────────────────────────────────
 
 export const WORKFLOW_DATA = {
@@ -468,6 +753,14 @@ export const WORKFLOW_DATA = {
   new_patient: {
     nursing:  new_patient_nursing,
     provider: new_patient_provider,
+  },
+  awv: {
+    nursing:  awv_nursing,
+    provider: awv_provider,
+  },
+  omt: {
+    nursing:  omt_nursing,
+    provider: omt_provider,
   },
 }
 
